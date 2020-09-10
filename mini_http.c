@@ -64,6 +64,7 @@ void do_http_request(int client_sock) {
     char buf[256];
     char method[64];
     char url[256];
+    char path[256];
 
     //读取客户端发送的http请求
 
@@ -71,7 +72,7 @@ void do_http_request(int client_sock) {
     
     len = get_line(client_sock, buf, sizeof(buf));
     
-    if (len > 0) { //读到请求行
+    if (len > 0) { //读到了请求行
         int i = 0, j = 0;
         while (!isspace(buf[j]) && i < (sizeof(method) - 1)) {
             method[i] = buf[j];
@@ -98,14 +99,43 @@ void do_http_request(int client_sock) {
             url[i] = '\0';
 
             if (debug) printf("url: %s\n", url);
+
+            //继续读取http头部
+            do {
+                len = get_line(client_sock, buf, sizeof(buf));
+                if (debug) printf("read: %s\n", buf);
+            } while (len > 0);
+
+            //定位服务器本地的html文件
+
+            //处理url 中的?
+            {
+                char *pos = strchr(url, '?');
+                if (pos) {
+                    *pos = '\0';
+                    printf("real url: %s\n", url);
+                }
+            }
+
+            sprintf(path, "./html_docs/%s", url);
+            if (debug) printf("path: %s\n", path);
+
+            //执行http 响应
+
+        } else { //非get请求, 读取http头部, 并响应客户端 501 Method Not Implemented
+            fprintf(stderr, "warning! other request [%s]\n", method);
+            do {
+                len = get_line(client_sock, buf, sizeof(buf));
+                if (debug) printf("read: %s\n", buf);
+            } while (len > 0);
+
+            //unimplemented(client_sock);
         }
 
-        //继续读取http头部
-        do {
-            len = get_line(client_sock, buf, sizeof(buf));
-            if (debug) printf("read: %s\n", buf);
-        } while (len > 0);
         
+        
+    } else { //请求格式有问题, 出错处理
+        //bad_request(client_sock);
     }
 
 }
