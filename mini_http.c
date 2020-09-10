@@ -8,6 +8,8 @@
 
 #define SERVER_PORT 80
 
+static int debug = 1;
+
 int get_line(int sock, char *buf, int size);
 void do_http_request(int client_sock);
 
@@ -60,14 +62,52 @@ int main(void) {
 void do_http_request(int client_sock) {
     int len = 0;
     char buf[256];
+    char method[64];
+    char url[256];
 
     //读取客户端发送的http请求
 
     //1. 读取请求行
-    do {
-        len = get_line(client_sock, buf, sizeof(buf));
-        printf("read line : %s\n", buf);
-    } while (len > 0);
+    
+    len = get_line(client_sock, buf, sizeof(buf));
+    
+    if (len > 0) { //读到请求行
+        int i = 0, j = 0;
+        while (!isspace(buf[j]) && i < (sizeof(method) - 1)) {
+            method[i] = buf[j];
+            i++;
+            j++;
+        }
+
+        method[i] = '\0';
+        if (debug) printf("request method: %s \n", method);
+
+        if (strncasecmp(method, "GET", i) == 0) { //只处理get请求
+            if (debug) printf("method = GET\n");
+
+            //获取url
+            while (isspace(buf[j++])); //跳过白空格
+            i = 0;
+
+            while (!isspace(buf[j]) && i < (sizeof(url) - 1)) {
+                url[i] = buf[j];
+                i++;
+                j++;
+            }
+
+            url[i] = '\0';
+
+            if (debug) printf("url: %s\n", url);
+        }
+
+        //继续读取http头部
+        do {
+            len = get_line(client_sock, buf, sizeof(buf));
+            if (debug) printf("read: %s\n", buf);
+        } while (len > 0);
+        
+    }
+
 }
 
 //返回值: -1 表示读取, 等于0表示读到一个空行, 大于0表示成功读取一行
