@@ -5,6 +5,10 @@
 #include <string.h>
 #include <ctype.h>
 #include <arpa/inet.h>
+#include <errno.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #define SERVER_PORT 80
 
@@ -13,6 +17,7 @@ static int debug = 1;
 int get_line(int sock, char *buf, int size); //int get_line(int sock, char buf[], int size);
 void do_http_request(int client_sock);
 void do_http_response(int client_sock);
+void not_found(int client_sock);
 
 int main(void) {
     int sock;
@@ -66,6 +71,8 @@ void do_http_request(int client_sock) {
     char method[64];
     char url[256];
     char path[256];
+
+    struct stat st;
 
     //读取客户端发送的http请求
 
@@ -122,7 +129,13 @@ void do_http_request(int client_sock) {
             if (debug) printf("path: %s\n", path);
 
             //执行http 响应
-            do_http_response(client_sock);
+            //判断文件是否存在, 如果存在就响应200 OK, 同时发送相应的html 文件, 如果不存在, 就响应 404 NOT FOUND,
+            if (stat(path, &st) == -1) { //文件不存在或是出错
+                not_found(client_sock);
+            } else { //文件存在
+                do_http_response(client_sock);
+            }
+            
 
         } else { //非get请求, 读取http头部, 并响应客户端 501 Method Not Implemented
             fprintf(stderr, "warning! other request [%s]\n", method);
@@ -212,3 +225,28 @@ int get_line(int sock, char *buf, int size) {
     return count;
 }
 
+void not_found(int client_sock) {
+    const char* reply = "\
+    <!DOCTYPE html>\n\
+<html lang=\"en\">\n\
+<head>\n\
+    <meta charset=\"UTF-8\">\n\
+    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n\
+    <title>Document</title>\n\
+</head>\n\
+<body>\n\
+    <p>\n\
+        文件不存在!\n\
+    </p>\n\
+</body>\n\
+</html>\n\
+    ";
+
+    int len = write(client_sock, reply, strlen(reply));
+    if (debug) fprintf(stdout, reply);
+
+    if (len < 0) {
+        fprintf(stdout, "send reply failed. reason: %s\n", strerror(errno));
+    }
+
+}
