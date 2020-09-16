@@ -10,8 +10,9 @@
 
 static int debug = 1;
 
-int get_line(int sock, char *buf, int size);
+int get_line(int sock, char *buf, int size); //int get_line(int sock, char buf[], int size);
 void do_http_request(int client_sock);
+void do_http_response(int client_sock);
 
 int main(void) {
     int sock;
@@ -121,6 +122,7 @@ void do_http_request(int client_sock) {
             if (debug) printf("path: %s\n", path);
 
             //执行http 响应
+            do_http_response(client_sock);
 
         } else { //非get请求, 读取http头部, 并响应客户端 501 Method Not Implemented
             fprintf(stderr, "warning! other request [%s]\n", method);
@@ -140,7 +142,42 @@ void do_http_request(int client_sock) {
 
 }
 
-//返回值: -1 表示读取, 等于0表示读到一个空行, 大于0表示成功读取一行
+void do_http_response(int client_sock) {
+    const char* main_header = "HTTP/1.0 200 OK\r\nServer: Martin Server\r\nContent -Type: text/html\r\nConnection: Close\r\n";
+    const char* welcome_content = "\
+    <!DOCTYPE html>\n\
+<html lang=\"en\">\n\
+<head>\n\
+    <meta charset=\"UTF-8\">\n\
+    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n\
+    <title>Document</title>\n\
+</head>\n\
+<body>\n\
+    这是一个迷你服务器\n\
+</body>\n\
+</html>\n\
+    ";
+
+    //1. 送main_header
+    int len = write(client_sock, main_header, strlen(main_header));
+
+    if (debug) fprintf(stdout, "... do_http response...\n");
+    if (debug) fprintf(stdout, "write[%d]: %s", len, main_header);
+
+    //2. 生成 Content-Length 行并发送
+    char send_buf[64];
+    int wc_len = strlen(welcome_content);
+    len = snprintf(send_buf, 64, "Content-Length: %d\r\n\r\n", wc_len);
+    len = write(client_sock, send_buf, len);
+
+    if (debug) fprintf(stdout, "write[%d]: %s", len, send_buf);
+
+    len = write(client_sock, welcome_content, wc_len);
+    if (debug) fprintf(stdout, "write[%d]: %s", len, welcome_content);
+    //3. 发送html 文件内容
+}
+
+//返回值: -1 表示读取失败, 等于0表示读到一个空行, 大于0表示成功读取一行
 int get_line(int sock, char *buf, int size) {
     int count = 0;
     char ch = '\0';
