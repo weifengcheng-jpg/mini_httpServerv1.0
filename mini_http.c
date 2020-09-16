@@ -16,7 +16,12 @@ static int debug = 1;
 
 int get_line(int sock, char *buf, int size); //int get_line(int sock, char buf[], int size);
 void do_http_request(int client_sock);
-void do_http_response(int client_sock);
+//void do_http_response(int client_sock);
+void do_http_response(int client_sock, const char* path);
+void headers(int client_sock, FILE* resource);
+void cat(int client_sock, FILE* resource);
+void inner_error(int client_sock);
+
 void not_found(int client_sock);
 
 int main(void) {
@@ -64,6 +69,7 @@ int main(void) {
 
     return 0;
 }
+
 
 void do_http_request(int client_sock) {
     int len = 0;
@@ -131,9 +137,15 @@ void do_http_request(int client_sock) {
             //执行http 响应
             //判断文件是否存在, 如果存在就响应200 OK, 同时发送相应的html 文件, 如果不存在, 就响应 404 NOT FOUND,
             if (stat(path, &st) == -1) { //文件不存在或是出错
+                fprintf(stderr, "stat %s failed. reason: %s \n", path, strerror(errno));
                 not_found(client_sock);
             } else { //文件存在
-                do_http_response(client_sock);
+
+                if (S_ISDIR(st.st_mode)) { //S_ISDIR (st_mode) 是否为目录 //mode_t st_mode; //protection 文件的类型和存取的权限
+                    strcat(path, "/index.html");
+                }
+
+                do_http_response(client_sock, path);
             }
             
 
@@ -155,6 +167,56 @@ void do_http_request(int client_sock) {
 
 }
 
+void do_http_response(int client_sock, const char* path) {
+    FILE* resource = NULL;
+
+    resource = fopen(path, "r");
+
+    if (resource == NULL) {
+        not_found(client_sock);
+        return ;
+    }
+
+    //1.发送http 头部
+    headers(client_sock, resource);
+
+    //2.发搜http body .
+    //cat(client_sock, resource);
+
+    fclose(resource);
+}
+
+void headers(int client_sock, FILE* resource) {
+    struct stat st;
+    int fileid = 0;
+    char tmp[64];
+    char buf[1024] = {0};
+    strcpy(buf, "HTTP/1.0 200 OK\r\n");
+    strcat(buf, "Server: Martin Server\r\n");
+    strcat(buf, "Content -Type: text/html\r\n");
+    strcat(buf, "Connection: Close\r\n");
+
+    fileid = fileno(resource);
+
+    if (fstat(fileid, &st) == -1) {
+        inner_error(client_sock);
+    }
+
+    snprintf(tmp, 64, "Content-Length: %ld\r\n\r\n", st.st_size);
+    strcat(buf, tmp);
+
+    if (debug) fprintf(stdout, "header: %s\n", buf);
+
+    if (send(client_sock, buf, strlen(buf), 0) < 0) {
+        fprintf(stderr, "send failed. data: %s, reason: %s\n", buf, strerror(errno));
+    }
+}  
+
+void cat(int client_sock, FILE* resource) {
+    
+}
+
+/*
 void do_http_response(int client_sock) {
     const char* main_header = "HTTP/1.0 200 OK\r\nServer: Martin Server\r\nContent -Type: text/html\r\nConnection: Close\r\n";
     const char* welcome_content = "\
@@ -189,6 +251,7 @@ void do_http_response(int client_sock) {
     if (debug) fprintf(stdout, "write[%d]: %s", len, welcome_content);
     //3. 发送html 文件内容
 }
+*/
 
 //返回值: -1 表示读取失败, 等于0表示读到一个空行, 大于0表示成功读取一行
 int get_line(int sock, char *buf, int size) {
@@ -227,19 +290,45 @@ int get_line(int sock, char *buf, int size) {
 
 void not_found(int client_sock) {
     const char* reply = "\
-    <!DOCTYPE html>\n\
-<html lang=\"en\">\n\
-<head>\n\
-    <meta charset=\"UTF-8\">\n\
-    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n\
-    <title>Document</title>\n\
-</head>\n\
-<body>\n\
-    <p>\n\
-        文件不存在!\n\
-    </p>\n\
-</body>\n\
-</html>\n\
+    <!DOCTYPE html>\r\n\
+<html lang=\"en\">\r\n\
+<head>\r\n\
+    <meta charset=\"UTF-8\">\r\n\
+    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\r\n\
+    <title>Document</title>\r\n\
+</head>\r\n\
+<body>\r\n\
+    <p>\r\n\
+        文件不存在!\r\n\
+    </p>\r\n\
+</body>\r\n\
+</html>\r\n\
+    ";
+
+    int len = write(client_sock, reply, strlen(reply));
+    if (debug) fprintf(stdout, reply);
+
+    if (len < 0) {
+        fprintf(stdout, "send reply failed. reason: %s\n", strerror(errno));
+    }
+
+}
+
+void inner_error(int client_sock) {
+    const char* reply = "\
+    <!DOCTYPE html>\r\n\
+<html lang=\"en\">\r\n\
+<head>\r\n\
+    <meta charset=\"UTF-8\">\r\n\
+    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\r\n\
+    <title>Document</title>\r\n\
+</head>\r\n\
+<body>\r\n\
+    <p>\r\n\
+        服务器内部出错!\r\n\
+    </p>\r\n\
+</body>\r\n\
+</html>\r\n\
     ";
 
     int len = write(client_sock, reply, strlen(reply));
